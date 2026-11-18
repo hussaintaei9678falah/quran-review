@@ -1,0 +1,55 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Download Arabic speech model (Vosk, offline model that gets bundled in the APK)
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 5 --retry-delay 5 -o model.zip https://alphacephei.com/vosk/models/vosk-model-ar-mgb2-0.4.zip
+          mkdir -p tmp_model
+          unzip -q model.zip -d tmp_model
+          d=$(find tmp_model -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          mkdir -p app/src/main/assets
+          rm -rf app/src/main/assets/model-ar
+          mv "$d" app/src/main/assets/model-ar
+          rm -rf model.zip tmp_model
+          ls app/src/main/assets/model-ar
+          du -sh app/src/main/assets/model-ar
+
+      - name: Build APK
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Prepare file
+        run: cp app/build/outputs/apk/debug/app-debug.apk QuranReview.apk && ls -lh QuranReview.apk
+
+      - name: Publish release with APK
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: مراجعة القرآن - بناء ${{ github.run_number }}
+          files: QuranReview.apk
